@@ -27,9 +27,11 @@ class D3DTexture2D {
 protected:
 	D3D11Hook * h_ = nullptr;
 
-	D3D11_TEXTURE2D_DESC desc_;
-	ID3D11Texture2D * tex_ = nullptr;
+	
 public:
+	D3D11_TEXTURE2D_DESC desc_;
+
+	ID3D11Texture2D * tex_ = nullptr;
 	D3DTexture2D(const D3DTexture2D &) = delete;
 	D3DTexture2D& operator=(const D3DTexture2D &) = delete;
 	D3DTexture2D(D3D11Hook * h, const D3D11_TEXTURE2D_DESC & d = { 0 });

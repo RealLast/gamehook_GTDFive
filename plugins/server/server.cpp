@@ -2,17 +2,22 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include <Windows.h>
-#include <queue>
 #include <chrono>
+#include <mutex>
+#include <queue>
 #include "log.h"
 #include "sdk.h"
 #include "json.h"
+#include "viewer.h"
 //#include "mongoose.h"
 #define ASIO_STANDALONE
 #define USE_STANDALONE_ASIO
+#pragma warning( push )
+#pragma warning( disable : 4996)
+#include "external/simple-web-crypto/crypto.hpp" // UGLY hack around openssl dependency
 #include "server_http.hpp"
-
-// TODO: It might be worth combining this with a websocket server (https://github.com/eidheim/Simple-WebSocket-Server/issues/71)
+#include "server_ws.hpp"
+#pragma warning( pop )
 
 #pragma comment(lib,"ws2_32")
 
@@ -23,7 +28,7 @@ double time() {
 	return std::chrono::duration<double>(now.time_since_epoch()).count();
 }
 struct CaptureSettings {
-	int W = 800, H = 600;
+	int W = 0, H = 0;
 	float fps = 0;
 	int frame_buffer_size = 10;
 	int info_buffer_size = 1000;
@@ -206,7 +211,10 @@ struct HTTPServer {
 	std::queue<std::string> send_queue;
 
 	typedef SimpleWeb::Server<SimpleWeb::HTTP> Server;
+	typedef SimpleWeb::SocketServer<SimpleWeb::WS> WsServer;
+
 	Server server;
+	WsServer ws_server;
 	HANDLE server_thread;
 template<typename T>
 	void updateSettings(T q) {
@@ -259,7 +267,7 @@ template<typename T>
 			if (std::isnan(s)) {
 				o[0] = o[1] = o[2] = 0;
 			} else {
-				float h = (atan2(d[1], d[0]) / 3.14159265359f + 1.0f) / 2.0f;
+				float h = (atan2(d[1], d[0]) / 3.14159265359f + 1.f) / 2.f;
 				// HSV to RGB
 				int hi = (int)(6 * h + 6) % 6;
 				float f = 6 * h - hi;
@@ -342,6 +350,15 @@ template<typename T>
 		response->write((const char*)f->data(), W*H*C*DS);
 		return true;
 	}
+	const std::string PING_ENDPOINT = "^/ping/?$";
+	void ping(size_t id, const std::string & msg) {
+		if (ws_server.endpoint.count(PING_ENDPOINT)) {
+			auto &ping_endpoint = ws_server.endpoint[PING_ENDPOINT];
+			for (auto c : ping_endpoint.get_connections()) {
+				c->send("{\"id\": "+std::to_string(id)+", \"message\": \""+msg+"\"}");
+			}
+		}
+	}
 	void start() {
 		server.config.port = DEFAULT_PORT;
 		{
@@ -349,6 +366,31 @@ template<typename T>
 			if (GetEnvironmentVariableA("SERVER_PORT", tmp, sizeof(tmp)))
 				server.config.port = atoi(tmp);
 		}
+
+		// Setup a websock server  
+		server.on_upgrade = [&](std::unique_ptr<SimpleWeb::HTTP> &socket, std::shared_ptr<Server::Request> request) {
+			auto connection = std::make_shared<WsServer::Connection>(std::move(socket));
+			connection->method = std::move(request->method);
+			connection->path = std::move(request->path);
+			connection->http_version = std::move(request->http_version);
+			connection->header = std::move(request->header);
+			connection->remote_endpoint = std::move(*request->remote_endpoint);
+			ws_server.upgrade(connection);
+		};
+		auto &ping_endpoint = ws_server.endpoint[PING_ENDPOINT];
+		ping_endpoint.on_open = [&](std::shared_ptr<WsServer::Connection> connection) {
+			LOG(INFO) << "New ping from " << connection;
+		};
+		ping_endpoint.on_close = [&](std::shared_ptr<WsServer::Connection> connection, int status, const std::string &reason) {
+			LOG(INFO) << "Closed ping from " << connection << " reason: " << reason;
+		};
+
+
+		// Setup the HTTP server
+		server.resource["^/view$"]["GET"] = [this](std::shared_ptr<Server::Response> response, std::shared_ptr<Server::Request> request) {
+			updateSettings(request->parse_query_string());
+			response->write(viewer("localhost:"+std::to_string(server.config.port), settings.targets));
+		};
 		server.resource["^/status$"]["GET"] = [this](std::shared_ptr<Server::Response> response, std::shared_ptr<Server::Request> request) {
 			if (this->status == STARTED) response->write(std::string("started"));
 			if (this->status == RUNNING) response->write(std::string("running"));
@@ -456,7 +498,7 @@ template<typename T>
 						return;
 				}
 			}
-			response->write(SimpleWeb::StatusCode::success_no_content);
+			response->write(SimpleWeb::StatusCode::success_ok);
 		};
 		server.resource["^/raw$"]["GET"] = [this](std::shared_ptr<Server::Response> response, std::shared_ptr<Server::Request> request) {
 			auto q = request->parse_query_string();
@@ -480,7 +522,7 @@ template<typename T>
 						return;
 				}
 			}
-			response->write(SimpleWeb::StatusCode::success_no_content);
+			response->write(SimpleWeb::StatusCode::success_ok);
 		};
 		server.default_resource["GET"] = [](std::shared_ptr<Server::Response> response, std::shared_ptr<Server::Request> request) {
 			response->write(std::string("gamehook server."));
@@ -511,26 +553,30 @@ struct Server : public GameController {
 	double last_recorded_frame = 0, frame_timestamp = 0;
 	bool recording_current_frame = false;
 	CaptureSettings current_settings;
-	virtual RecordingType recordFrame(uint32_t frame_id) {
+	virtual void onPresent(uint32_t frame_id) override {
+		if (recording_current_frame)
+			server.ping(frame_id, "frame_recorded");
 		{
 			std::lock_guard<std::mutex> lock(server.settings_mtx);
 			current_settings = server.settings;
+			if (current_settings.W == 0) current_settings.W = defaultWidth();
+			if (current_settings.H == 0) current_settings.H = defaultHeight();
 		}
 		frame_timestamp = time();
 		if ((frame_timestamp - last_recorded_frame) * current_settings.fps >= 1) {
 			last_recorded_frame = frame_timestamp;
 			recording_current_frame = true;
-			return RecordingType::DRAW;
-		} else {
+			recordNextFrame(RecordingType::DRAW);
+		}
+		else {
 			// Recording disabled, let's make sure we capture the first frame once we enable it.
 			if (current_settings.fps <= 0)
 				last_recorded_frame = 0;
 			recording_current_frame = false;
-			return RecordingType::NONE;
 		}
 	}
 
-	virtual void startFrame(uint32_t frame_id) {
+	virtual void onBeginFrame(uint32_t frame_id) override {
 		recording_current_frame = currentRecordingType() != RecordingType::NONE;
 		if (recording_current_frame) {
 			for (const auto & t : current_settings.targets)
@@ -548,16 +594,16 @@ struct Server : public GameController {
 		{
 			std::lock_guard<std::mutex> lock(server.send_queue_mtx);
 			while (!server.send_queue.empty()) {
-				sendCommand(server.send_queue.front());
+				command(server.send_queue.front());
 				server.send_queue.pop();
 			}
 		}
 	}
-	virtual void endFrame(uint32_t frame_id) {
+	virtual void onEndFrame(uint32_t frame_id) override {
 		server.current_frame_id = frame_id;
 		{
 			std::lock_guard<std::mutex> lock(server.game_info_mtx);
-			server.game_info[frame_id] = getGameState();
+			server.game_info[frame_id] = gameState();
 			// Purge old game states
 			while (server.game_info.size() > server.settings.info_buffer_size)
 				server.game_info.erase(server.game_info.begin());
@@ -588,7 +634,8 @@ struct Server : public GameController {
 						readTarget(t, W, H, C, f->type(), f->data());
 						// Color correction
 						TargetType tt = targetType(t);
-						if ((B8G8R8A8_UNORM <= tt && tt <= B8G8R8X8_UNORM_SRGB && tt != R10G10B10_XR_BIAS_A2_UNORM) && C == 4) {
+						// TODO: There is a but in FC Primal that flips RB
+						if (((B8G8R8A8_UNORM <= tt && tt <= B8G8R8X8_UNORM_SRGB && tt != R10G10B10_XR_BIAS_A2_UNORM) || (R8G8B8A8_UNORM <= tt && tt <= R8G8B8A8_UNORM_SRGB)) && C == 4) {
 							// Flip RB
 							uint8_t * d = (uint8_t*)f->data();
 							// TODO: SSE This if it's too slow _mm_shuffle_epi8

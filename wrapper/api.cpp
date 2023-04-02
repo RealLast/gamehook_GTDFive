@@ -128,6 +128,7 @@ HMODULE patchAndLoadLibrary(const char * filename, const char * dll_name) {
 	return r;
 }
 
+#define NO_ASI_LOADER true
 
 void loadAPI(const char * dll_name, bool load_hk, bool load_asi) {
 	if (dll_name && !current_dll_name.size())

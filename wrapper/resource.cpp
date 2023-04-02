@@ -565,10 +565,27 @@ bool D3DTexture2D::setup(uint32_t W, uint32_t H, DXGI_FORMAT format, uint32_t mi
 			tex_->Release();
 		}
 		desc_ = { W, H, mip_level, 1, format, {1,0}, usage, bind_flags, cpu_access, misc_flags };
+		
 		HRESULT hr = h_->D3D11Hook::CreateTexture2D(&desc_, nullptr, &tex_);
 		if (FAILED(hr)) {
-			LOG(ERR) << "Failed to create texture hr = " << std::hex << hr;
-			return false;
+			D3D11_TEXTURE2D_DESC desc = { 0 };
+			desc.Format = format;
+			desc.ArraySize = 1;
+			desc.BindFlags = 0;
+			desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			desc.Height = H;
+			desc.Width = W;
+			desc.MipLevels = 1;
+			desc.MiscFlags = 0;
+			desc.SampleDesc.Count = 1;
+			desc.SampleDesc.Quality = 0;
+			desc.Usage = D3D11_USAGE_STAGING;
+			HRESULT hr = h_->D3D11Hook::CreateTexture2D(&desc, nullptr, &tex_);
+			if (FAILED(hr)) 
+			{
+				LOG(ERR) << "Failed to create texture hr = " << std::hex << hr;
+				return false;
+			}
 		}
 		return true;
 	}

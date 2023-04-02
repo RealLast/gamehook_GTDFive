@@ -324,6 +324,169 @@ void BaseRenderTarget::copyFrom(ID3D11RenderTargetView * view) {
 	copyFrom((ID3D11View*)view, desc.Format);
 }
 
+
+void BaseRenderTarget::copyFrom(ID3D11DepthStencilView * view) {
+	ID3D11Resource * r;
+	view->GetResource(&r);
+	D3D11_RESOURCE_DIMENSION d;
+	r->GetType(&d);
+
+	D3D11_DEPTH_STENCIL_VIEW_DESC desc;
+	view->GetDesc(&desc);
+
+	if (d == D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+		copyFromDepthStencil((ID3D11Texture2D*)r, desc.Format, view);
+	else
+		LOG(WARN) << "copyFrom: View doesn't hold a ID3D11Texture2D";
+	r->Release();
+}
+
+void RenderTarget::copyFromDepthStencil(ID3D11Texture2D * tex, DXGI_FORMAT hint, ID3D11DepthStencilView * view) {
+	// LOG(INFO) << __LINE__;
+	D3D11_TEXTURE2D_DESC t_desc = { 0 };
+	// LOG(INFO) << __LINE__;
+	tex->GetDesc(&t_desc);
+	// LOG(INFO) << __LINE__;
+	if (hint_ != DXGI_FORMAT_UNKNOWN)
+		t_desc.Format = hint_;
+	else if (hint != DXGI_FORMAT_UNKNOWN)
+		t_desc.Format = hint;
+	CreateTextureIfNeeded(&tex_.tex_, hint, t_desc, tex_.desc_);
+	LOG(INFO) << __LINE__;
+	ID3D11Resource * r;
+	view->GetResource(&r);
+
+	LOG(INFO) << tex_.desc_.Height << " " << tex_.desc_.Width << " " << tex_.desc_.Format << " " << tex_.desc_.SampleDesc.Count;
+	LOG(INFO) << t_desc.Height << " " << t_desc.Width << " " << t_desc.Format << " " << t_desc.SampleDesc.Count;
+
+	 h_->CopyResource(tex_.tex_, (ID3D11Texture2D*)r);
+	LOG(INFO) << __LINE__;
+}
+
+void RenderTarget::CreateTextureIfNeeded(ID3D11Texture2D** tex_target, DXGI_FORMAT hint, D3D11_TEXTURE2D_DESC desc, D3D11_TEXTURE2D_DESC& returnDesc)
+{
+	
+	LOG(INFO) << __LINE__;
+	if(*tex_target == nullptr)
+	{
+		LOG(INFO) << __LINE__ << " " << desc.Format << " " << desc.Width << " " << desc.Height << " "  << desc.SampleDesc.Count;
+		*tex_target = CreateTexHelper(desc.Format, desc.Width, desc.Height, desc.SampleDesc.Count, returnDesc);
+	}
+	LOG(INFO) << __LINE__;
+	D3D11_TEXTURE2D_DESC tex_desc;
+	LOG(INFO) << __LINE__;
+	(*tex_target)->GetDesc(&tex_desc);
+	LOG(INFO) << __LINE__;
+	if (tex_desc.Width != desc.Width || tex_desc.Height != desc.Height)
+	{
+		LOG(INFO) << __LINE__;
+		*tex_target = CreateTexHelper(desc.Format, desc.Width, desc.Height, desc.SampleDesc.Count, returnDesc);
+	}
+	LOG(INFO) << __LINE__;	
+}
+
+ID3D11Texture2D* RenderTarget::CreateTexHelper(DXGI_FORMAT fmt, int width, int height, int samples, D3D11_TEXTURE2D_DESC& returnDesc)
+{
+	D3D11_TEXTURE2D_DESC desc = { 0 };
+	desc.Format = fmt;
+	desc.ArraySize = 1;
+	desc.BindFlags = 0;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	desc.Height = height;
+	desc.Width = width;
+	desc.MipLevels = 1;
+	desc.MiscFlags = 0;
+	desc.SampleDesc.Count = 1;
+	desc.SampleDesc.Quality = 0;
+	desc.Usage = D3D11_USAGE_STAGING;
+	ID3D11Texture2D* result;
+	HRESULT hr = S_OK;
+	LOG(INFO) << __LINE__;
+	hr = h_->CreateTexture2D(&desc, nullptr, &result);
+	LOG(INFO) << __LINE__;
+	if (hr != S_OK) throw std::system_error(hr, std::system_category());
+	LOG(INFO) << __LINE__;
+	returnDesc = desc;
+	return result;
+}
+
+
+bool RenderTarget::unpackDepthStencil(int W, int H, int C, unsigned char* depth, unsigned char* stencil)
+{
+
+	LOG(WARN) << "UNPACKING DEPTH!!!!";
+
+	HRESULT hr = S_OK;
+
+
+	D3D11_TEXTURE2D_DESC src_desc;
+	tex_.tex_->GetDesc(&src_desc);
+	if (src_desc.Format != DXGI_FORMAT_R32G8X24_TYPELESS)
+	{
+		LOG(WARN) << "WRONG FORMAT !!!!";
+	}
+	D3D11_MAPPED_SUBRESOURCE src_map = { 0 };
+	hr = h_->Map(tex_.tex_, 0, D3D11_MAP_READ, 0, &src_map);
+	if (hr != S_OK)
+	{
+		LOG(WARN) << "MAP FAILED";
+
+	}
+
+	if (src_map.pData == NULL)
+	{
+		LOG(WARN) << "MAP DATA NULL";
+	}
+	if (W >= src_desc.Width)
+	{
+		LOG(INFO) << "NO SCALE " << W << " " << src_desc.Width << " " << H << " " << src_desc.Height;
+
+		for (int x = 0; x < src_desc.Width; ++x)
+		{
+
+
+			for (int y = 0; y < src_desc.Height; ++y)
+			{
+
+				const float* src_f = (const float*)((const char*)src_map.pData + src_map.RowPitch*y + (x * 8));
+				unsigned char* dst_p = &depth[src_desc.Width * 4 * y + (x * 4)];
+				unsigned char* stencil_p = &stencil[src_desc.Width * y + x];
+
+
+				memmove(dst_p, src_f, 4);
+
+				memmove(stencil_p, src_f + 1, 1);
+
+			}
+		}
+	}
+	else
+	{
+		// resample, for when depth map is bigger than screen image.
+		float scale = ((float)src_desc.Width) / ((float)W);
+		LOG(INFO) << "SCALE " << W << " " << src_desc.Width << " " << H << " " << src_desc.Height;
+
+		for (int x = 0; x < W; ++x) // screenResX
+		{
+			int scaledX = int(x*scale);
+
+			for (int y = 0; y < H; ++y) //screenResY
+			{
+				int scaledY = int(y*scale);
+				const float* src_f = (const float*)((const char*)src_map.pData + int(src_map.RowPitch*scaledY + (scaledX * 8)));
+				unsigned char* dst_p = &depth[W * 4 * y + (x * 4)];
+				unsigned char* stencil_p = &stencil[W * y + x];
+				memmove(dst_p, src_f, 4);
+				memmove(stencil_p, src_f + 1, 1);
+			}
+		}
+
+	}
+	h_->Unmap(tex_.tex_, 0);
+	return true;
+}
+
+
 void BaseRenderTarget::copyOutputFrom(ID3D11ShaderResourceView * view, DXGI_FORMAT format) {
 	if (canMip(format))
 		h_->D3D11Hook::GenerateMips(view);
@@ -359,13 +522,15 @@ bool BaseRenderTarget::read(int W, int H, int C, DataType T, void * d) {
 }
 DO_ALL_TYPE(READ);
 #undef READ
+
+
 ID3D11Texture2D * BaseRenderTarget::tex() const {
 	return nullptr;
 }
 
 
 
-RenderTarget::RenderTarget(D3D11Hook * h) :BaseRenderTarget(h), tex_(h) {}
+RenderTarget::RenderTarget(D3D11Hook * h, DXGI_FORMAT hint) :BaseRenderTarget(h), tex_(h), hint_(hint) {}
 RenderTarget::~RenderTarget() {
 	if (view_) view_->Release();
 }
@@ -375,29 +540,43 @@ void BaseRenderTarget::copyFrom(const BaseRenderTarget & rt) {
 }
 
 void RenderTarget::copyFrom(ID3D11Texture2D * tex, DXGI_FORMAT hint) {
+	// LOG(INFO) << __LINE__;
 	D3D11_TEXTURE2D_DESC t_desc = { 0 };
+	// LOG(INFO) << __LINE__;
 	tex->GetDesc(&t_desc);
-	if (hint != DXGI_FORMAT_UNKNOWN)
+	// LOG(INFO) << __LINE__;
+	if (hint_ != DXGI_FORMAT_UNKNOWN)
+		t_desc.Format = hint_;
+	else if (hint != DXGI_FORMAT_UNKNOWN)
 		t_desc.Format = hint;
 
+	// LOG(INFO) << __LINE__;
 	bool use_mip = canMip(t_desc.Format);
+	// LOG(INFO) << __LINE__;
 	if (tex_.setup(t_desc.Width, t_desc.Height, t_desc.Format, use_mip ? 5 : 1, D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE | (use_mip ? D3D11_BIND_RENDER_TARGET : 0), 0, use_mip ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0)) {
 		if (view_) view_->Release();
+		// LOG(INFO) << __LINE__;
 		HRESULT hr;
+		// LOG(INFO) << __LINE__;
 		D3D11_SHADER_RESOURCE_VIEW_DESC fmt = { t_desc.Format, D3D11_SRV_DIMENSION_TEXTURE2D };
+		// LOG(INFO) << __LINE__;
 		fmt.Texture2D.MipLevels = -1;
+		// LOG(INFO) << __LINE__;
 		fmt.Texture2D.MostDetailedMip = 0;
+		// LOG(INFO) << __LINE__;
 		hr = h_->D3D11Hook::CreateShaderResourceView(tex_, &fmt, &view_);
+		// LOG(INFO) << __LINE__;
 		if (FAILED(hr))
 			LOG(ERR) << "Failed to create copy view. hr = " << std::hex << hr << std::dec;
 	}
-
+	// LOG(INFO) << __LINE__;
 	if (t_desc.SampleDesc.Count > 1)
 		h_->D3D11Hook::ResolveSubresource(tex_, 0, tex, 0, t_desc.Format);
 	else
 		h_->D3D11Hook::CopySubresourceRegion(tex_, 0, 0, 0, 0, tex, 0, nullptr);
-
+	// LOG(INFO) << __LINE__;
 	copyOutputFrom(view_, t_desc.Format);
+	// LOG(INFO) << __LINE__;
 }
 
 DataType RenderTarget::type() const {
@@ -413,6 +592,8 @@ TargetType RenderTarget::format() const {
 ID3D11Texture2D * RenderTarget::tex() const {
 	return tex_;
 }
+
+
 
 RWTextureTarget::RWTextureTarget(D3D11Hook * h, DXGI_FORMAT format) :BaseRenderTarget(h), tex_(h), format_(format) {}
 RWTextureTarget::~RWTextureTarget() {
@@ -431,6 +612,12 @@ void RWTextureTarget::setup(int W, int H, DXGI_FORMAT format) {
 			LOG(ERR) << "Failed to create RWTextureTarget view. hr = " << std::hex << hr << std::dec;
 	}
 }
+bool RWTextureTarget::unpackDepthStencil(int W, int H, int C, unsigned char* depth, unsigned char* stencil)
+{
+	LOG(INFO) << "SHOULDNT REACH HERE!";
+	return false;
+}
+
 void RWTextureTarget::fetch() {
 	copyOutputFrom(view_, tex_.format());
 }
@@ -443,6 +630,8 @@ int RWTextureTarget::channels() const {
 TargetType RWTextureTarget::format() const {
 	return (TargetType)format_;
 }
+
+
 
 ID3D11Texture2D * RWTextureTarget::tex() const {
 	return tex_;

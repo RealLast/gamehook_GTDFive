@@ -34,15 +34,40 @@ LONG_PTR IOHook::setWindowLongPtr(int nIndex, LONG_PTR dwNewLong) {
 	}
 	return 0;
 }
+unsigned char dik(unsigned char k) {
+	if (k == 27) return 1;
+	if (k == '0') return 0xb;
+	if ('1' <= k && k <= '9') return 0x2 + (k - '1');
+	if (k == 13) return 0x1c;
+	return k;
+}
+void IOHookHigh::sendKey(unsigned char key, unsigned char up) {
+	HWND old_wnd = GetForegroundWindow();
+#ifdef FORCE_FG
+	if (hwnd_ != old_wnd)
+		SetForegroundWindow(hwnd_);
+#else
+	if (hwnd_ == old_wnd) {
+#endif
+		INPUT ip = { 0 };
+		ip.type = INPUT_KEYBOARD;
+		ip.ki.wScan = key;
+		ip.ki.dwFlags = KEYEVENTF_SCANCODE | (up * KEYEVENTF_KEYUP);
+		SendInput(1, &ip, sizeof(INPUT));
 
-void IOHookHigh::sendKeyDown(unsigned char key, bool syskey) {
-	LPARAM lParam = 1 | (1 << 30);
-	wndProc(syskey ? WM_SYSKEYDOWN : WM_KEYDOWN, key, lParam);
+#ifdef FORCE_FG
+	if (hwnd_ != old_wnd)
+		SetForegroundWindow(old_wnd); 
+#else
+	}
+#endif
+}
+void IOHookHigh::sendKeyDown(unsigned char key) {
+	sendKey(key, 0);
 }
 
-void IOHookHigh::sendKeyUp(unsigned char key, bool syskey) {
-	LPARAM lParam = 1 | (3 << 30);
-	wndProc(syskey ? WM_SYSKEYUP : WM_KEYUP, key, lParam);
+void IOHookHigh::sendKeyUp(unsigned char key) {
+	sendKey(key, 1);
 }
 
 void IOHookHigh::sendMouse(uint16_t x, uint16_t y, uint8_t button, UINT msg_o) {
@@ -52,9 +77,9 @@ void IOHookHigh::sendMouse(uint16_t x, uint16_t y, uint8_t button, UINT msg_o) {
 	if (button == 1)
 		msg = WM_LBUTTONDOWN;
 	else if (button == 2)
-		msg = WM_LBUTTONDOWN;
+		msg = WM_RBUTTONDOWN;
 	else if (button == 3)
-		msg = WM_LBUTTONDOWN;
+		msg = WM_MBUTTONDOWN;
 	else LOG(WARN) << "Unknown mouse button " << button;
 	if (msg)
 		wndProc(msg + msg_o, 0, MAKELPARAM(x, y));
@@ -80,19 +105,22 @@ LRESULT IOHookHigh::wndProc(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				bool state_switch = !(lParam & (1 << 30));
 
 				unsigned char special_state = (CTRL*key_state[VK_CONTROL]) | (SHIFT*key_state[VK_SHIFT]) | (ALT*key_state[VK_MENU]) | (SWITCH*state_switch);
-				if ((wParam < VK_SHIFT || wParam > VK_MENU) && keyDown(wParam, special_state))
+				if ((wParam < VK_SHIFT || wParam > VK_MENU) && handleKeyDown(wParam, special_state))
 					return 0;
 			}
 		}
 		else if (uMsg == WM_KEYUP || uMsg == WM_SYSKEYUP) {
 			if (0 < wParam && wParam < 255) {
 				key_state[wParam] = UP;
-				if ((wParam < VK_SHIFT || wParam > VK_MENU) && keyUp(wParam))
+				if ((wParam < VK_SHIFT || wParam > VK_MENU) && handleKeyUp(wParam))
 					return 0;
 			}
 		}
 //		else
 //			LOG(WARN) << "Unhandled keyboard event " << uMsg;
+	}
+	if (uMsg == WM_KILLFOCUS) {
+		if (handleKillFocus()) return 0;
 	}
 	//if (uMsg == WM_TIMER)
 	//	LOG(INFO) << "Timer " << wParam << " " << lParam;

@@ -80,6 +80,10 @@ struct BaseRenderTarget {
 	virtual void copyFrom(ID3D11View * view, DXGI_FORMAT hint = DXGI_FORMAT_UNKNOWN);
 	virtual void copyFrom(const BaseRenderTarget & rt);
 	virtual void copyFrom(ID3D11Texture2D * tex, DXGI_FORMAT hint = DXGI_FORMAT_UNKNOWN) = 0;
+	virtual void copyFrom(ID3D11DepthStencilView * view);
+	virtual void copyFromDepthStencil(ID3D11Texture2D * tex, DXGI_FORMAT hint, ID3D11DepthStencilView * view) = 0;
+
+
 
 	void addOutput(int W, int H);
 	bool read(int W, int H, int C, DataType T, void * d);
@@ -89,6 +93,8 @@ struct BaseRenderTarget {
 	bool read(int W, int H, int C, half * d);
 	bool read(int W, int H, int C, float * d);
 
+	virtual bool unpackDepthStencil(int W, int H, int C, unsigned char* depth, unsigned char* stencil) = 0;
+
 	virtual ID3D11Texture2D * tex() const = 0;
 	virtual ID3D11ShaderResourceView * rtv() const = 0;
 protected:
@@ -97,16 +103,21 @@ protected:
 };
 
 struct RenderTarget: public BaseRenderTarget {
+	DXGI_FORMAT hint_;
 	D3DTexture2D tex_;
 	ID3D11ShaderResourceView * view_ = nullptr;
 
 	RenderTarget(const RenderTarget &) = delete;
 	RenderTarget& operator=(const RenderTarget &) = delete;
-	RenderTarget(D3D11Hook * h);
+	RenderTarget(D3D11Hook * h, DXGI_FORMAT hint = DXGI_FORMAT_UNKNOWN);
 	virtual ~RenderTarget();
 
 	using BaseRenderTarget::copyFrom;
 	virtual void copyFrom(ID3D11Texture2D * tex, DXGI_FORMAT hint = DXGI_FORMAT_UNKNOWN);
+	virtual void copyFromDepthStencil(ID3D11Texture2D * tex, DXGI_FORMAT hint, ID3D11DepthStencilView * view);
+	void CreateTextureIfNeeded(ID3D11Texture2D** tex_target, DXGI_FORMAT hint, D3D11_TEXTURE2D_DESC desc, D3D11_TEXTURE2D_DESC& returnDesc);
+	RenderTarget::ID3D11Texture2D* CreateTexHelper(DXGI_FORMAT fmt, int width, int height, int samples, D3D11_TEXTURE2D_DESC& returnDesc);
+	virtual bool unpackDepthStencil(int W, int H, int C, unsigned char* depth, unsigned char* stencil);
 
 	DataType type() const;
 	int channels() const;
@@ -116,7 +127,7 @@ struct RenderTarget: public BaseRenderTarget {
 	virtual ID3D11ShaderResourceView * rtv() const { return view_; }
 };
 
-struct RWTextureTarget: public BaseRenderTarget {
+struct RWTextureTarget : public BaseRenderTarget {
 	DXGI_FORMAT format_;
 	RWTexture2D tex_;
 	ID3D11ShaderResourceView * view_ = nullptr;
@@ -127,6 +138,9 @@ struct RWTextureTarget: public BaseRenderTarget {
 	virtual ~RWTextureTarget();
 
 	virtual void copyFrom(ID3D11Texture2D * tex, DXGI_FORMAT hint = DXGI_FORMAT_UNKNOWN);
+	virtual void copyFromDepthStencil(ID3D11Texture2D * tex, DXGI_FORMAT hint, ID3D11DepthStencilView * view) {}
+
+	virtual bool unpackDepthStencil(int W, int H, int C, unsigned char* depth, unsigned char* stencil);
 	operator bool() const { return tex_; }
 	operator ID3D11UnorderedAccessView *() const { return tex_; }
 	operator ID3D11RenderTargetView *() const { return tex_; }

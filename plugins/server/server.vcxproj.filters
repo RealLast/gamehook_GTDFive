@@ -20,15 +20,19 @@
     <ClInclude Include="..\..\SDK\log.h">
       <Filter>SDK</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="server.proto">
-      <Filter>Resource Files</Filter>
-    </None>
+    <ClInclude Include="viewer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="server.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="external\simple-web-crypto\sha1.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="view.html" />
   </ItemGroup>
 </Project>

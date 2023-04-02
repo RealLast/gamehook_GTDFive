@@ -21,7 +21,7 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <RootNamespace>server</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.14393.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
     <ProjectGuid>{4252A0F9-0B5D-4ECF-A7F1-F944889FE961}</ProjectGuid>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -66,25 +66,25 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>$(SolutionDir)\SDK;$(ProjectDir)\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)\SDK;$(ProjectDir)\external\asio;$(ProjectDir)\external\simple-web-server;$(ProjectDir)\external\simple-websocket-server;$(ProjectDir)\external\openssl\include;$(IncludePath)</IncludePath>
     <TargetExt>.hk</TargetExt>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(Platform)\$(Configuration)\</IntDir>
     <CustomBuildAfterTargets>PostBuildEvent</CustomBuildAfterTargets>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>$(SolutionDir)\SDK;$(ProjectDir)\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)\SDK;$(ProjectDir)\external\asio;$(ProjectDir)\external\simple-web-server;$(ProjectDir)\external\simple-websocket-server;$(ProjectDir)\external\openssl\include;$(IncludePath)</IncludePath>
     <TargetExt>.hk</TargetExt>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(Platform)\$(Configuration)\</IntDir>
     <CustomBuildAfterTargets>PostBuildEvent</CustomBuildAfterTargets>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(SolutionDir)\SDK;$(ProjectDir)\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)\SDK;$(ProjectDir)\external\asio;$(ProjectDir)\external\simple-web-server;$(ProjectDir)\external\simple-websocket-server;$(ProjectDir)\external\openssl\include;$(IncludePath)</IncludePath>
     <TargetExt>.hk</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(SolutionDir)\SDK;$(ProjectDir)\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)\SDK;$(ProjectDir)\external\asio;$(ProjectDir)\external\simple-web-server;$(ProjectDir)\external\simple-websocket-server;$(ProjectDir)\external\openssl\include;$(IncludePath)</IncludePath>
     <TargetExt>.hk</TargetExt>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -96,6 +96,7 @@
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <MinimalRebuild>false</MinimalRebuild>
       <FunctionLevelLinking>true</FunctionLevelLinking>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <AdditionalDependencies>gamehook.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -114,6 +115,7 @@
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <MinimalRebuild>false</MinimalRebuild>
       <FunctionLevelLinking>true</FunctionLevelLinking>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <AdditionalDependencies>gamehook.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -131,6 +133,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -150,6 +153,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -162,14 +166,37 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="external\simple-web-crypto\sha1.cpp" />
     <ClCompile Include="server.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\SDK\log.h" />
     <ClInclude Include="..\..\SDK\sdk.h" />
+    <ClInclude Include="viewer.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="server.proto" />
+    <CustomBuild Include="view.html">
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">python make_viewer.py</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">python make_viewer.py</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">python make_viewer.py</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">python make_viewer.py</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">viewer.h</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">viewer.h</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">viewer.h</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">viewer.h</Outputs>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</DeploymentContent>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</DeploymentContent>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</DeploymentContent>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</DeploymentContent>
+    </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
