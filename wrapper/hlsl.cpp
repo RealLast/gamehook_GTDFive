@@ -8,6 +8,7 @@
 #include <string>
 #include <algorithm>
 #include <iomanip>
+#include <functional>
 
 /* MD5 magic */
 #define F(x, y, z)			((z) ^ ((x) & ((y) ^ (z))))
